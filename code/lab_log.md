@@ -207,3 +207,11 @@ Caveats to address: (1) single fold — need cross-fold mean±sd. (2) Dice still
 - FINDING: knee in trade-off at lambda~0.05-0.1. Below = cheap heatmap gains; above = AUC cost for no Dice gain.
 - Recommended operating point: lambda in [0.05, 0.1]. Extreme reg is counterproductive.
 - Single-fold caveat stands: 0.875 AUC ties + noisy Dice => must cross-validate lambda in {0.05,0.1} to firm up.
+
+## Cross-validation — AUC side (10 folds, aggregate_cv.py)
+- lambda=0.0:  AUC 0.9248 ± 0.071
+- lambda=0.05: AUC 0.9248 ± 0.071  (delta +0.0000, p=1.000 — IDENTICAL to baseline)
+- lambda=0.1:  AUC 0.9112 ± 0.073  (delta -0.014, p=0.643 — not significant)
+- KEY: single-fold apparent AUC decline (0.955->0.909) was mostly split noise. CV washes it out.
+- Defensible claim: entropy reg at lambda=0.05 preserves AUC exactly; even 0.1 no sig drop.
+- Large fold sd (±0.07) confirms single-fold numbers were untrustworthy — justifies CV in write-up.
