@@ -215,3 +215,12 @@ Caveats to address: (1) single fold — need cross-fold mean±sd. (2) Dice still
 - KEY: single-fold apparent AUC decline (0.955->0.909) was mostly split noise. CV washes it out.
 - Defensible claim: entropy reg at lambda=0.05 preserves AUC exactly; even 0.1 no sig drop.
 - Large fold sd (±0.07) confirms single-fold numbers were untrustworthy — justifies CV in write-up.
+
+## Cross-validated Dice — CORE RESULT COMPLETE (cv_dice_eval.py, 10 folds, 1470 evals)
+- Dice: lambda 0.0: 0.160±0.012 | 0.05: 0.181±0.012 | 0.1: 0.181±0.012
+- vs baseline: lambda=0.05 delta +0.020, t-p<0.0001, Wilcoxon p=0.002, d=+2.85 (very large)
+              lambda=0.1  delta +0.021, t-p=0.0002, d=+1.85
+- Entropy across folds: 0.53 -> 0.74 (0.05) -> 0.86 (0.1). Mechanism confirmed CV-wide.
+- FINAL THESIS: entropy reg at lambda=0.05 improves heatmap Dice (+0.020, highly sig, huge effect)
+  at ZERO AUC cost (0.9248, p=1.000). Recommended operating point lambda=0.05.
+- Dice sd tight (±0.012) vs AUC sd (±0.071) — explains why Dice effect is clean while AUC ties.
