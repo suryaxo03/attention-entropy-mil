@@ -234,3 +234,15 @@ KEY FINDING (new, hidden by AUC): lambda=0.05 cuts false negatives 38->25 (-34%)
   Clinically: catches more metastases at small specificity cost. AUC couldn't show this (threshold-free).
   lambda=0.1 becomes over-conservative (best precision, worst recall). Reinforces lambda=0.05 as sweet spot.
 Note: P/R/F1 at threshold 0.5 (threshold-dependent, unlike AUC). Confusion matrices saved above.
+
+## Small-focus analysis (RQ3) — small_focus_analysis.py — supervisor comment 44
+Eval set: 27 micro + 22 macro slides (well balanced).
+Dice, baseline vs entropy(lambda=0.05), paired:
+  MICRO: 0.028 -> 0.037, delta +0.008, p<0.0001, d=0.41 (sig but tiny absolute values)
+  MACRO: 0.322 -> 0.357, delta +0.035, p<0.0001, d=0.57
+FINDING (contra hypothesis): entropy reg helps BOTH strata significantly, but absolute
+  improvement + effect size LARGER for macro. Micro Dice near-zero either way.
+INTERPRETATION: micro-met localisation is bounded by PATCH RESOLUTION (coarse attention vs
+  sub-mm target), not by the aggregator. Method helps proportionally (~30% rel gain on micro)
+  but can't overcome patch-level coarseness. Motivates future work: finer patches/higher mag for small foci.
+Note: detection (recall, item 1) improves, but localisation (Dice) benefit strongest on macro. Distinct effects.
