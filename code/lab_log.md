@@ -224,3 +224,13 @@ Caveats to address: (1) single fold — need cross-fold mean±sd. (2) Dice still
 - FINAL THESIS: entropy reg at lambda=0.05 improves heatmap Dice (+0.020, highly sig, huge effect)
   at ZERO AUC cost (0.9248, p=1.000). Recommended operating point lambda=0.05.
 - Dice sd tight (±0.012) vs AUC sd (±0.071) — explains why Dice effect is clean while AUC ties.
+
+## Classification metrics beyond AUC (classification_metrics.py) — supervisor comment 49
+Pooled out-of-fold over 270 train slides, threshold 0.5:
+  lambda=0.0:  AUC 0.874, P 0.869, R 0.658, F1 0.749 | FN=38, FP=11
+  lambda=0.05: AUC 0.876, P 0.827, R 0.775, F1 0.800 | FN=25, FP=18
+  lambda=0.1:  AUC 0.869, P 0.909, R 0.631, F1 0.745 | FN=41, FP=7
+KEY FINDING (new, hidden by AUC): lambda=0.05 cuts false negatives 38->25 (-34%), recall +0.12, F1 +0.05.
+  Clinically: catches more metastases at small specificity cost. AUC couldn't show this (threshold-free).
+  lambda=0.1 becomes over-conservative (best precision, worst recall). Reinforces lambda=0.05 as sweet spot.
+Note: P/R/F1 at threshold 0.5 (threshold-dependent, unlike AUC). Confusion matrices saved above.
