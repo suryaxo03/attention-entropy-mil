@@ -6,16 +6,28 @@ Deep learning for detecting breast cancer metastasis in lymph node whole slide i
 
 Attention-based multiple instance learning (MIL) methods such as CLAM classify gigapixel pathology slides while producing an attention heatmap that shows where the model is looking. These heatmaps are the interface a pathologist uses to verify an automated decision, but CLAM's softmax attention tends to concentrate on a few patches, so the heatmap can under-represent the disease even when the slide-level prediction is correct.
 
-This project adds a single **attention entropy regularisation** term to the CLAM training objective that rewards a less concentrated attention distribution. It is a one-parameter modification (λ) that adds no parameters to the model and recovers standard CLAM exactly at λ = 0.
+This project adds a single **attention entropy regularisation** term to the CLAM training objective that rewards a less concentrated attention distribution. It is a one-parameter modification (lambda) that adds no parameters to the model and recovers standard CLAM exactly at lambda = 0.
 
 ## Key result
 
 Evaluated on the CAMELYON16 benchmark with 10-fold cross-validation:
 
-- **Heatmap localisation improves significantly.** Mean Dice against expert tumour annotations rises from 0.160 to 0.181 at λ = 0.05 (paired t-test p < 0.0001, Cohen's d = 2.85).
+- **Heatmap localisation improves significantly.** Mean Dice against expert tumour annotations rises from 0.160 to 0.181 at lambda = 0.05 (paired t-test p < 0.0001, Cohen's d = 2.85).
 - **Classification accuracy is preserved.** Cross-validated AUC is unchanged (0.9248 with and without the term, p = 1.000).
 - **Best localiser of any aggregator tested.** Against mean/max pooling, ABMIL, CLAM, and a transformer aggregator, the proposed method achieves the highest heatmap Dice while remaining statistically tied on classification.
 - **Fewer missed metastases.** At the chosen operating point, false negatives fall by 34% relative to baseline.
+
+The trade-off between heatmap quality and classification accuracy as the regularisation strength lambda varies, cross-validated over 10 folds:
+
+![Heatmap Dice and classification AUC against the regularisation strength lambda](assets/fig_knee.png)
+
+lambda = 0.05 is adopted as the operating point: it captures most of the interpretability gain while classification AUC remains statistically indistinguishable from the baseline.
+
+## The method in action
+
+Baseline CLAM (lambda = 0) versus entropy-regularised attention (lambda = 0.05) on a test slide. The regularised model spreads attention more fully across the tumour region and recovers a second focus the baseline under-attends:
+
+![Baseline versus entropy-regularised attention heatmaps](assets/fig_heatmap_lambda.png)
 
 A notable finding is the dissociation between classification and interpretability: the transformer aggregator classifies well (AUC 0.937) but localises poorly (Dice 0.068), showing that accuracy and explanation quality are distinct properties.
 
@@ -24,17 +36,21 @@ A notable finding is the dissociation between classification and interpretabilit
 The training objective adds a weighted attention-entropy term to the standard CLAM loss:
 
 ```
-L = L_CLAM − λ · H(a),    where    H(a) = − Σ aᵢ log aᵢ
+L = L_CLAM - lambda * H(a),    where    H(a) = - sum a_i log a_i
 ```
 
-Here `a` is the attention distribution over a slide's patches and `H(a)` is its Shannon entropy. Subtracting the term rewards higher entropy (less concentrated attention). λ = 0 reduces the objective to standard CLAM, making the comparison a controlled, single-parameter ablation.
+Here `a` is the attention distribution over a slide's patches and `H(a)` is its Shannon entropy. Subtracting the term rewards higher entropy (less concentrated attention). lambda = 0 reduces the objective to standard CLAM, making the comparison a controlled, single-parameter ablation.
 
 ## Pipeline
 
-1. **Preprocessing** — tissue segmentation (HSV + Otsu), multi-scale patch extraction (20× detail paired with 5× context), and quality filtering.
-2. **Feature extraction** — a frozen ResNet-50 encodes each patch into a 4096-dimensional vector; features are cached once so all aggregators train on the same representation.
-3. **Aggregation** — mean/max pooling, ABMIL, CLAM, a simplified TransMIL, and the proposed CLAM + entropy, all compared under identical conditions.
-4. **Evaluation** — classification (AUC, precision, recall, F1) and heatmap quality (Dice, IoU, attention entropy), with a lesion-size stratified analysis.
+1. **Preprocessing** - tissue segmentation (HSV + Otsu), multi-scale patch extraction (20x detail paired with 5x context), and quality filtering.
+2. **Feature extraction** - a frozen ResNet-50 encodes each patch into a 4096-dimensional vector; features are cached once so all aggregators train on the same representation.
+3. **Aggregation** - mean/max pooling, ABMIL, CLAM, a simplified TransMIL, and the proposed CLAM + entropy, all compared under identical conditions.
+4. **Evaluation** - classification (AUC, precision, recall, F1) and heatmap quality (Dice, IoU, attention entropy), with a lesion-size stratified analysis.
+
+Validation AUC during training, showing all aggregators converge within the epoch budget and the pooling baselines trail the attention-based methods:
+
+![Validation AUC during training by aggregator](assets/fig_training_comparison.png)
 
 ## Repository structure
 
@@ -56,6 +72,7 @@ code/
   knee_plot.py              lambda trade-off figure
   plot_training_curves.py   convergence figures
   *.sbatch                  Slurm batch scripts
+assets/                     result figures
 outputs/                    result CSVs (data and checkpoints are gitignored)
 ```
 
