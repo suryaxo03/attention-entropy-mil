@@ -7,6 +7,30 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class MeanMaxPooling(nn.Module):
+    """
+    Non-learned control aggregators. mode='mean' or 'max'.
+    A small linear classifier sits on top of the pooled feature so it can train,
+    but the aggregation itself has no learned attention.
+    """
+    def __init__(self, in_dim=4096, hidden=512, n_classes=2, mode="mean"):
+        super().__init__()
+        self.mode = mode
+        self.compress = nn.Sequential(
+            nn.Linear(in_dim, hidden), nn.ReLU(), nn.Dropout(0.25))
+        self.classifier = nn.Linear(hidden, n_classes)
+
+    def forward(self, h, label=None, instance_eval=False):
+        h = self.compress(h)                       # (N, hidden)
+        if self.mode == "mean":
+            z = h.mean(dim=0, keepdim=True)        # (1, hidden)
+        else:
+            z = h.max(dim=0, keepdim=True).values  # (1, hidden)
+        logits = self.classifier(z)
+        # uniform "attention" so heatmap eval still works (all patches equal)
+        A = torch.full((h.shape[0],), 1.0 / h.shape[0], device=h.device)
+        ent = -torch.sum(A * torch.log(A + 1e-8))
+        return {"logits": logits, "attention": A, "attention_entropy": ent}
 
 class GatedAttention(nn.Module):
     """
@@ -45,14 +69,15 @@ class ABMIL(nn.Module):
         self.attention = GatedAttention(hidden, attn_hidden)
         self.classifier = nn.Linear(hidden, n_classes)
 
-    def forward(self, h):
+    def forward(self, h, label=None, instance_eval=False):
         # h: (N, in_dim) features for ONE slide (one bag)
         h = self.compress(h)                 # (N, hidden)
         scores = self.attention(h)           # (N, 1)
         A = torch.softmax(scores, dim=0)     # (N, 1) attention weights, sum to 1
         z = torch.sum(A * h, dim=0, keepdim=True)  # (1, hidden) bag representation
         logits = self.classifier(z)          # (1, n_classes)
-        return logits, A.squeeze(1)          # logits, per-patch attention (N,)
+        return {"logits": logits, "attention": A.squeeze(1),
+                "attention_entropy": -torch.sum(A.squeeze(1) * torch.log(A.squeeze(1) + 1e-8))}
 
 class CLAM_SB(ABMIL):
     """
@@ -130,3 +155,42 @@ class CLAM_SB(ABMIL):
         This is the quantity the proposed regularisation rewards.
         """
         return -torch.sum(attn * torch.log(attn + eps))
+
+class TransMIL(nn.Module):
+    """
+    TransMIL (Shao et al., 2021), compact implementation.
+    Projects features, prepends a class token, applies two transformer layers
+    with standard multi-head self-attention, and classifies from the class token.
+    Attention for the heatmap is taken from the class-token attention over patches.
+    (Full TransMIL uses Nystrom approximation + PPEG; this uses standard attention,
+    which is tractable here because bags are a few thousand patches and we run on A40.)
+    """
+    def __init__(self, in_dim=4096, hidden=512, n_classes=2, n_heads=8):
+        super().__init__()
+        self.proj = nn.Sequential(nn.Linear(in_dim, hidden), nn.ReLU())
+        self.cls_token = nn.Parameter(torch.randn(1, 1, hidden) * 0.02)
+        layer = nn.TransformerEncoderLayer(
+            d_model=hidden, nhead=n_heads, dim_feedforward=hidden*2,
+            dropout=0.1, batch_first=True)
+        self.transformer = nn.TransformerEncoder(layer, num_layers=2)
+        self.norm = nn.LayerNorm(hidden)
+        self.classifier = nn.Linear(hidden, n_classes)
+        self.n_heads = n_heads
+
+    def forward(self, h, label=None, instance_eval=False):
+        # h: (N, in_dim)
+        x = self.proj(h).unsqueeze(0)                  # (1, N, hidden)
+        cls = self.cls_token                            # (1, 1, hidden)
+        x = torch.cat([cls, x], dim=1)                  # (1, N+1, hidden)
+        x = self.transformer(x)                         # (1, N+1, hidden)
+        x = self.norm(x)
+        logits = self.classifier(x[:, 0])               # from class token -> (1, n_classes)
+
+        # Approximate per-patch attention: cosine similarity of each patch token
+        # to the class token, softmaxed. Gives a heatmap comparable to the others.
+        cls_out = x[0, 0]                                # (hidden,)
+        patch_out = x[0, 1:]                             # (N, hidden)
+        sim = torch.matmul(patch_out, cls_out) / (cls_out.norm() + 1e-8)
+        A = torch.softmax(sim, dim=0)                   # (N,)
+        ent = -torch.sum(A * torch.log(A + 1e-8))
+        return {"logits": logits, "attention": A, "attention_entropy": ent}

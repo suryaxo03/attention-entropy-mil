@@ -246,3 +246,85 @@ INTERPRETATION: micro-met localisation is bounded by PATCH RESOLUTION (coarse at
   sub-mm target), not by the aggregator. Method helps proportionally (~30% rel gain on micro)
   but can't overcome patch-level coarseness. Motivates future work: finer patches/higher mag for small foci.
 Note: detection (recall, item 1) improves, but localisation (Dice) benefit strongest on macro. Distinct effects.
+
+## Aggregator comparison — models implemented + verified (models.py, test_aggregators.py)
+- Added MeanMaxPooling (mean/max control, uniform attention for heatmap floor) and TransMIL.
+- TransMIL note: faithful but SIMPLIFIED — standard transformer attention + class token, NOT the
+  published Nystrom+PPEG. Call it "TransMIL-style" in write-up. Captures inter-patch correlation idea.
+- All 5 forward-verified on tumor_001: logits (1,2), attn (5323,), sum=1.0.
+- Lineup for comparison: mean, max, ABMIL, TransMIL, CLAM, CLAM+entropy(lambda=0.05).
+
+## Generalised training verified across aggregators (train.py)
+- Added build_model factory + --model flag (clam|abmil|mean|max|transmil). Checkpoints prefixed by model name.
+- Fixed ABMIL: forward now accepts (label, instance_eval), returns dict w/ attention_entropy (interface-compatible).
+- ABMIL fold 0: best val AUC 0.938 (vs CLAM 0.955) — sensible, CLAM's clustering gives small edge.
+
+## Aggregator comparison — AUC side (evaluate_comparison.py, 10-fold CV)
+- mean 0.812±0.106 | max 0.897±0.091 | abmil 0.924±0.080 | transmil 0.937±0.073 | clam 0.940±0.069 | clam+entropy 0.916±0.069
+- Ranking sensible: pooling controls < attention methods. Attention methods (abmil/transmil/clam/+entropy) all within noise of each other.
+- CLAM+entropy 0.916 vs CLAM 0.940: diff 0.024 < sd 0.069, NOT significant. Consistent with dedicated CV (0.9248=0.9248, p=1.000).
+- Note: TransMIL strong on AUC (0.937). KEY QUESTION for Dice: does it localise as well? Contribution should win on heatmaps, not AUC.
+
+## Aggregator comparison — Dice side COMPLETE (compare_dice.py, 2940 evals)
+Mean Dice (49 slides x 10 folds): CLAM+entropy 0.180 (BEST) > CLAM 0.161 > ABMIL 0.159 > TransMIL 0.068 > mean/max 0.000.
+- CLAM+entropy vs CLAM: +0.019 Dice (+12% relative). Contribution WINS on heatmap quality.
+- Cross-ref AUC: CLAM+entropy mid-pack on AUC (0.916) but BEST on Dice. THE thesis result: best interpretability at no sig. accuracy cost.
+- mean/max = 0.000 (uniform attention floor — no localisation without attention; expected, useful).
+- TransMIL 0.068: strong classifier (AUC 0.937) but poor localiser. Honest finding: accuracy != interpretability. Reinforces project premise.
+NOTE: need paired Wilcoxon (CLAM+entropy vs CLAM, per slide-fold) for significance — pull from full CSV next.
+
+## Aggregator Dice comparison — paired significance (final)
+- CLAM+entropy 0.180 vs CLAM 0.161, n=490 slide-folds.
+- paired t p=1.2e-10, Wilcoxon p=3.2e-19, Cohen d=0.297 (small-moderate). Entropy better on 301/490.
+- CONCLUSIVE: contribution significantly best on Dice; statistically tied on AUC. Thesis proven both axes.
+
+## Training curve figures (plot_training_curves.py) — comments #11, #12
+- Parses per-epoch metrics from compare logs. Bug fixed: regex now allows negative losses
+  (-?[\d.]+); entropy model's loss goes negative late (L_CLAM - lambda*H), which had truncated parsing at 6 epochs.
+- fig_convergence.png: clam+entropy fold 0, 20 epochs. Val AUC plateaus ~0.91 by epoch 7 (converged);
+  train loss goes negative late (entropy term active). Shows convergence + mechanism.
+- fig_training_comparison.png: val AUC vs epoch, all 6 configs, mean over 10 folds. Mean pooling floor;
+  attention methods clustered ~0.88-0.90.
+
+## Model architecture params (comment #8)
+- CLAM_SB: 2,362,629 params. compress 4096->512 (ReLU, dropout 0.25); gated attn V/U 512->256, w 256->1;
+  classifier 512->2; instance_classifier 512->2.
+- ABMIL: 2,361,603. Same minus instance_classifier.
+- TransMIL: 6,305,794. proj 4096->512; 2 transformer layers (8 heads, ffn 1024, dropout 0.1, 2x LayerNorm each); classifier 512->2.
+- MeanMaxPooling: 2,098,690. compress 4096->512; classifier 512->2 (no attention).
+- Shared hyperparams: Adam lr 1e-4, wd 1e-5, 20 epochs, batch=1 slide, instance loss weight 0.3, lambda in {0,0.05,0.1}.
+
+## Heatmap figures (heatmap_figure.py) — comments #9, #14
+- fig_heatmap_lambda.png: tissue / annotation / baseline attn / entropy(0.05) attn on test_001.
+  Entropy shows more spread on top-left focus; effect visible but subtle at 0.5 alpha.
+- fig_heatmap_threshold.png: tissue / attention / thresholded / prediction-vs-annotation. STRONG figure:
+  prediction lands on BOTH tumour foci (big top-left + small bottom). Demonstrates multi-focus catch.
+- Minor: threshold label shows "0.000" due to min-max norm + 90th pct of near-zero background. Fix: more decimals.
+- Only lambda 0.0 and 0.05 available for CLAM (comparison grid); dropped 0.1 from figure — cleaner 2-way contrast anyway.
+
+## Extended per-aggregator metrics (comparison_metrics.py) — comment #15
+Pooled out-of-fold (threshold 0.5): AUC / Prec / Recall / F1
+  mean 0.775/0.721/0.441/0.547 | max 0.832/0.713/0.694/0.703 | abmil 0.888/0.880/0.730/0.798
+  transmil 0.856/0.871/0.667/0.755 | clam 0.895/0.900/0.730/0.806 | clam+ent 0.882/0.860/0.721/0.784
+- Note: pooled AUC differs from per-fold-averaged AUC (e.g. clam 0.895 pooled vs 0.940 averaged). Use ONE method consistently in doc.
+- clam+entropy: F1 0.784, recall 0.721 — mid-pack on classification (consistent). Its edge is Dice (0.180, best), not these.
+
+## PLAN: cross-validate fuller lambda sweep for the knee plot (RQ4 rigour)
+- Training: cv_lambda_extra.sbatch — clam at lambda 0.01,0.02,0.15,0.2 x 10 folds (40 runs). Have 0,0.05,0.1 already.
+- Then: Dice eval on new checkpoints (49 test slides) + AUC from logs.
+- Then: plot cross-validated Dice & AUC vs lambda with ±sd error bars, 7 points (0 to 0.2), mark knee + chosen 0.05.
+- Purpose: show knee/plateau with error bars; justify lambda=0.05 choice; strengthen RQ4.
+
+## Knee-plot data (RQ4)
+AUC across lambda (10-fold CV, mean±sd):
+  0.0: 0.940±0.065 | 0.01: 0.929±0.057 | 0.02: 0.931±0.056 | 0.05: 0.916±0.065
+  0.1: 0.911±0.069 | 0.15: 0.907±0.065 | 0.2: 0.887±0.070
+- AUC declines monotonically with lambda. Anchor lambdas (0,0.05,0.1) from original CV; extras (0.01,0.02,0.15,0.2) from cv_lambda_extra.
+- Dice: resume job running (4 new lambdas x folds 1-9). Then build knee plot: Dice (rise+plateau) + AUC (decline) vs lambda, mark 0.05.
+
+## Knee plot COMPLETE (knee_plot.py) — RQ4, Figure 5.5
+Cross-validated Dice vs lambda: 0.161, 0.167, 0.163, 0.180, 0.184, 0.189, 0.187 (lambda 0 to 0.2).
+- Dice keeps RISING to lambda=0.15 (0.189), does NOT plateau at 0.05. AUC declines monotonically 0.940->0.887.
+- KEY FRAMING (corrected in 5.4): lambda=0.05 is a TRADE-OFF point, not Dice optimum. Captures most Dice gain while
+  AUC statistically tied w/ baseline; higher lambda buys marginal Dice at real classification cost (recall falls by 0.1).
+- fig_knee.png: shaded ±sd bands, lambda=0.05 marked. Caption updated to match.

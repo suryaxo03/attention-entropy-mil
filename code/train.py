@@ -11,8 +11,21 @@ import torch.nn as nn
 from sklearn.metrics import roc_auc_score
 
 from dataset import make_loader
-from models import CLAM_SB
+from models import CLAM_SB, ABMIL, MeanMaxPooling, TransMIL
 
+def build_model(name, in_dim=4096):
+    if name == "clam":
+        return CLAM_SB(in_dim=in_dim)
+    elif name == "abmil":
+        return ABMIL(in_dim=in_dim)
+    elif name == "mean":
+        return MeanMaxPooling(in_dim=in_dim, mode="mean")
+    elif name == "max":
+        return MeanMaxPooling(in_dim=in_dim, mode="max")
+    elif name == "transmil":
+        return TransMIL(in_dim=in_dim)
+    else:
+        raise ValueError(f"unknown model {name}")
 
 def run_epoch(model, loader, optimizer, device, lam, train=True):
     model.train() if train else model.eval()
@@ -65,7 +78,7 @@ def main(args):
     train_loader = make_loader(train_csv, feats, shuffle=True)
     val_loader = make_loader(val_csv, feats, shuffle=False)
 
-    model = CLAM_SB(in_dim=4096).to(device)
+    model = build_model(args.model, in_dim=4096).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
                                  weight_decay=args.wd)
 
@@ -73,7 +86,7 @@ def main(args):
           f"{len(train_loader)} train, {len(val_loader)} val slides")
 
     best_auc = 0.0
-    best_path = os.path.join(args.out_dir, f"fold{args.fold}_lam{args.lam}_best.pt")
+    best_path = os.path.join(args.out_dir, f"{args.model}_fold{args.fold}_lam{args.lam}_best.pt")
     os.makedirs(args.out_dir, exist_ok=True)
 
     for epoch in range(args.epochs):
@@ -99,6 +112,8 @@ def main(args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--fold", type=int, required=True)
+    p.add_argument("--model", default="clam",
+                   help="clam | abmil | mean | max | transmil")
     p.add_argument("--lam", type=float, default=0.0,
                    help="entropy regularisation weight (0 = standard CLAM)")
     p.add_argument("--epochs", type=int, default=20)

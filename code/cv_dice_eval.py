@@ -12,7 +12,7 @@ import subprocess
 from evaluate_heatmap import evaluate
 
 S3_IMG = "s3://camelyon-dataset/CAMELYON16/images"
-LAMBDAS = ["0.0", "0.05", "0.1"]
+LAMBDAS = ["0.0", "0.01", "0.02", "0.05", "0.1", "0.15", "0.2"]
 FOLDS = list(range(10))
 
 
@@ -21,7 +21,7 @@ def main(args):
     print(f"{len(xmls)} slides x {len(FOLDS)} folds x {len(LAMBDAS)} lambdas "
           f"= {len(xmls)*len(FOLDS)*len(LAMBDAS)} evals", flush=True)
 
-    out_csv = os.path.join(args.out_dir, "cv_dice_results.csv")
+    out_csv = os.path.join(args.out_dir, "cv_dice_knee.csv")
     os.makedirs(args.out_dir, exist_ok=True)
 
     # resume support: skip (slide,fold,lam) already in CSV
@@ -61,7 +61,7 @@ def main(args):
                                stdout=subprocess.DEVNULL)
 
             for fo, la in need:
-                ckpt = f"../outputs/checkpoints/fold{fo}_lam{la}_best.pt"
+ 
                 if not os.path.exists(ckpt):
                     print(f"    missing ckpt {ckpt}, skip", flush=True)
                     continue

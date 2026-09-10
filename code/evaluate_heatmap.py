@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 from models import CLAM_SB
 from annotation_to_mask import rasterise_mask
-
+from train import build_model
 
 def build_attention_grid(coords, attn, slide_path, level=6, patch_level=1, patch_size=256):
     """
@@ -53,14 +53,14 @@ def dice_iou(pred_bin, gt_bin):
 
 
 def evaluate(checkpoint, feat_path, slide_path, xml_path, out_dir,
-             level=6, thresh_pct=90, tag=""):
+             level=6, thresh_pct=90, tag="", model_name="clam"):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     with h5py.File(feat_path, "r") as f:
         feats = torch.from_numpy(f["features"][:]).float().to(device)
         coords = f["coords"][:]
 
-    model = CLAM_SB(in_dim=feats.shape[1]).to(device)
+    model = build_model(model_name, in_dim=feats.shape[1]).to(device)
     model.load_state_dict(torch.load(checkpoint, map_location=device))
     model.eval()
 
